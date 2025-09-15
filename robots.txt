@@ -1,0 +1,5 @@
+User-agent: *
+Disallow: 
+Disallow: /tag
+Disallow: /20*
+Sitemap: https://vaanifashion.com/sitemap.xml

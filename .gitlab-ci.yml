@@ -1,0 +1,91 @@
+# Define the Docker image to use
+image: ubuntu:20.04
+
+# Define stages of the pipeline
+stages:
+  - build
+  - deploy
+
+variables:
+  SSH_PRIVATE_KEY: $SSH_PRIVATE_KEY
+
+  # Variables for the development environment
+  DEV_SSH_USERNAME: "niche"
+  DEV_SSH_HOST: "143.110.241.3"
+  DEV_DESTINATION_DIR: "/var/www/vaani/html"
+  
+  # Variables for the production environment
+  PROD_SSH_USERNAME: "vaani"
+  PROD_SSH_HOST: "206.189.130.143"
+  PROD_DESTINATION_DIR: "/var/www/vaanifashion.in/html"
+
+# Job to build the CodeIgniter project
+build:
+  stage: build
+  only:
+    - uat
+  image: php:7.4-cli
+  script:
+    - apt-get update && apt-get install -y unzip
+    - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    - composer update
+  artifacts:
+    paths:
+      - vendor  
+  tags:
+    - docker_runner
+
+# Job to deploy the CodeIgniter project to a remote server using SCP
+deploy_development:
+  stage: deploy
+  only:
+    - uat
+  image: ubuntu:20.04
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+  script:
+    - apt-get install -y openssh-client
+    - apt-get update && apt-get install -y unzip 
+    - apt-get update && apt-get install -y zip
+    - ls -lah
+    - mv .qaenv .env
+    - zip -r code.zip .
+    # Use SCP to copy your project files to the remote server
+    - scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r code.zip $DEV_SSH_USERNAME@$DEV_SSH_HOST:$DEV_DESTINATION_DIR
+    - ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $DEV_SSH_USERNAME@$DEV_SSH_HOST "cd $DEV_DESTINATION_DIR && unzip -uo code.zip"
+  tags:
+    - docker_runner
+  environment:
+    name: development
+
+deploy_production:
+  stage: deploy
+  only:
+    - main
+  image: ubuntu:20.04
+  before_script:
+    - 'which ssh-agent || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+  script:
+    - apt-get install -y openssh-client
+    - apt-get update && apt-get install -y unzip 
+    - apt-get update && apt-get install -y zip
+    - ls -lah
+    - mv .liveenv .env
+    - zip -r code.zip .
+    # Use SCP to copy your project files to the remote server
+    - scp -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -r code.zip $PROD_SSH_USERNAME@$PROD_SSH_HOST:$PROD_DESTINATION_DIR
+    - ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa $PROD_SSH_USERNAME@$PROD_SSH_HOST "cd $PROD_DESTINATION_DIR && unzip -uo code.zip"
+  tags:
+    - docker_runner
+  environment:
+    name: production
